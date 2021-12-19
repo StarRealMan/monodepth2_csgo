@@ -34,13 +34,10 @@ class CSGODataset(data.Dataset):
     def index2path(self, index):
         for i, step in enumerate(self.steps):
             if index < step:
-                continue
-            else:
-                path = self.dataroots[i]
-                num = index - step + self.top_clips[i] + 1
-
+                path = self.dataroots[i- 1]
+                num = index - self.steps[i - 1] + self.top_clips[i] + 1
                 break
-
+        
         return path, num;
 
     def path2torch(self, path, images_id):
@@ -57,10 +54,8 @@ class CSGODataset(data.Dataset):
         return self.full_len
     
     def __getitem__(self, index):
-
         path, num = self.index2path(index)
         images_id = [num - 1, num, num + 1]
-
         image_last, image_this, image_next = self.path2torch(path, images_id)
 
         return image_last, image_this, image_next
@@ -101,15 +96,45 @@ def video2image(data_path, frame_draw = 0.2):
 
 if __name__ == "__main__":
 
-    dataroot = ["../data/Inferno_1"]
-    top_clip = [3]
-    bottom_clip = [9]
-    lens = [775]
+    dataroots = ["../data/Inferno_1", "../data/Inferno_2", "../data/Inferno_3",
+                 "../data/Mirage_1", "../data/Mirage_2", "../data/Mirage_3",
+                 "../data/Nuke_1", "../data/Nuke_2", "../data/Nuke_3",
+                 "../data/Overpass_1", "../data/Overpass_2", "../data/Overpass_3",
+                 "../data/Train_1", "../data/Train_2", "../data/Train_3",
+                 "../data/Vertigo_1", "../data/Vertigo_2", "../data/Vertigo_3"]
 
-    dataset = CSGODataset(None, (192, 108), dataroot, top_clip, bottom_clip, lens)
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size = 4, shuffle = True, num_workers = 8)
+    # for dataroot in dataroots:
+    #     video_name = dataroot + ".mp4"
+    #     video2image(video_name)
 
-    for data in dataloader:
-        image_last, image_this, image_next = data
-        print(image_last.shape)
-        break
+    top_clip = [3, 2, 3, 
+                2, 2, 4,
+                2, 2, 2,
+                3, 3, 2,
+                2, 2, 2,
+                4, 2, 2]
+    bottom_clip = [9, 7, 17,
+                   8, 6, 6,
+                   8, 7, 6,
+                   6, 7, 7,
+                   8, 6, 16,
+                   6, 7, 6]
+    lens = [775, 797, 705,
+            557, 568, 557,
+            514, 491, 538,
+            617, 621, 538,
+            445, 480, 643,
+            421, 503, 612]
+
+    dataset = CSGODataset(None, (192, 108), dataroots, top_clip, bottom_clip, lens)
+    # dataloader = torch.utils.data.DataLoader(dataset, batch_size = 4, shuffle = True, num_workers = 8)
+
+    # for data in dataloader:
+    #     image_last, image_this, image_next = data
+    #     print(image_last.shape)
+    #     break
+
+    num = 0
+    image_last, image_this, image_next = dataset.__getitem__(num)
+    print(image_last.shape)
+        
