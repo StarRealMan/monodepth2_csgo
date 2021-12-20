@@ -18,6 +18,8 @@ class CSGODataset(data.Dataset):
         self.lens = lens
         self.full_len = 0
         self.steps = []
+        self.scale = (self.resized_shape[0] / self.full_res_shape[0],
+                      self.resized_shape[1] / self.full_res_shape[1])
     
         self.transform = transforms.Compose([
             transforms.ToPILImage(),
@@ -126,7 +128,7 @@ if __name__ == "__main__":
             445, 480, 643,
             421, 503, 612]
 
-    dataset = CSGODataset(None, (192, 108), dataroots, top_clip, bottom_clip, lens)
+    dataset = CSGODataset(None, (1024, 512), dataroots, top_clip, bottom_clip, lens)
     # dataloader = torch.utils.data.DataLoader(dataset, batch_size = 4, shuffle = True, num_workers = 8)
 
     # for data in dataloader:
