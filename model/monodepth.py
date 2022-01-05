@@ -146,7 +146,7 @@ class PoseNet(nn.Module):
         self.translation_head = nn.Sequential(
             nn.Linear(ndf * 32, ndf * 8),
             nn.ReLU(),
-            nn.Linear(ndf * 8, 2 + self.t_anchor_len * 2),
+            nn.Linear(ndf * 8, 3 + self.t_anchor_len * 3),
             nn.ReLU(),
             nn.Tanh()
         )
@@ -154,7 +154,7 @@ class PoseNet(nn.Module):
         self.rotation_head = nn.Sequential(
             nn.Linear(ndf * 32, ndf * 8),
             nn.ReLU(),
-            nn.Linear(ndf * 8, 2 + self.r_anchor_len * 2),
+            nn.Linear(ndf * 8, 3 + self.r_anchor_len * 3),
             nn.ReLU(),
             nn.Tanh()
         )
@@ -188,16 +188,17 @@ class PoseNet(nn.Module):
         fused_trans = self.translation_head(fused)
         fused_rot = self.rotation_head(fused)
 
-        t_bin = fused_trans[:, 2:].view(-1, 2, self.t_anchor_len)
-        r_bin = fused_rot[:, 2:].view(-1, 2, self.r_anchor_len)
+        t_bin = fused_trans[:, 3:].view(-1, 3, self.t_anchor_len)
+        r_bin = fused_rot[:, 3:].view(-1, 3, self.r_anchor_len)
 
-        trans = self.t_bin_size * (fused_trans[:, :2] + torch.argmax(t_bin, 2))
-        rot = self.r_bin_size * (fused_rot[:, :2] + torch.argmax(r_bin, 2))
+        trans = self.t_bin_size * (fused_trans[:, :3] + torch.argmax(t_bin, 2))
+        rot = self.r_bin_size * (fused_rot[:, :3] + torch.argmax(r_bin, 2))
         
-        trans = #TODO
+        trans_norm = torch.unsqueeze(torch.norm(trans, dim = 1), 1)
+        trans = torch.div(trans, trans_norm)
+        
+        
         trans_amp = self.t_anchor_step + self.t_anchor_var * self.trans_amp_head(fused)
-
-        print(trans_amp.shape)
 
         return trans * trans_amp, rot
 
@@ -210,5 +211,6 @@ if __name__ == "__main__":
     input2 = F.pad(input2, (2, 2, 0, 0), "constant", 0)
 
     trans, rot = net(input1, input2)
-
-    print(trans.shape, " ", rot.shape)
+    
+    print(trans)
+    print(rot)
