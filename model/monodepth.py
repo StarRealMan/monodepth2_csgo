@@ -70,7 +70,7 @@ class DepthNet(nn.Module):
             nn.Conv2d(2 * ngf, ngf, 3, 1, 1, bias = False),
             nn.BatchNorm2d(ngf),
             nn.ReLU(),
-            nn.Conv2d(ngf, nc, 3, 1, 1, bias = False),
+            nn.Conv2d(ngf, 1, 3, 1, 1, bias = False),
             nn.Tanh(),
         )
 
