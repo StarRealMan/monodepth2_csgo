@@ -1,7 +1,7 @@
 import torch
-from torch._C import device
 import torch.nn as nn
 import torch.nn.functional as F
+import cv2
 
 def trans_rot2Tmat(trans1_2, rot1_2):
     bs = trans1_2.shape[0]
@@ -40,50 +40,98 @@ def trans_rot2Tmat(trans1_2, rot1_2):
     
     return Tmat
 
-def Warp(image, depth, Tmat, K):
-    bs = image.shape[0]
-    height = image.shape[2]
-    width = image.shape[3]
-    device = image.device
+def Warp(target_image, source_depth, Tmat, K):
+    bs = target_image.shape[0]
+    height = target_image.shape[2]
+    width = target_image.shape[3]
+    device = target_image.device
+    eps = 1e-7
+    
+    K_inv = torch.linalg.inv(K)
+    K_inv = K_inv.unsqueeze(0).repeat(bs, 1, 1)
     K = K.unsqueeze(0).repeat(bs, 1, 1)
+    
+    depth = source_depth.permute(0, 1, 3, 2).contiguous().view(bs, 1, -1)
     
     pix_x = torch.arange(width, device = device)
     pix_y = torch.arange(height, device = device)
-    grid_x, grid_y = torch.meshgrid(pix_x, pix_y, "ij")
-    pix_coord = torch.cat((grid_x, grid_y), 2)
+    grid_x, grid_y = torch.meshgrid(pix_x, pix_y, indexing = "xy")
+    pix_coord = torch.stack((grid_x, grid_y), 2)
     pix_coord = pix_coord.unsqueeze(0).repeat(bs, 1, 1, 1)
+    pix_coord = pix_coord.view(bs, -1, 2).permute(0, 2, 1)
+    pix_coord = torch.cat([pix_coord, torch.ones((bs, 1, pix_coord.shape[2]))], 1)
     
-    mask = torch.zeros_like(image)
+    cam_coord = torch.bmm(K_inv, pix_coord)
+    cam_coord = torch.mul(cam_coord, depth)
+    cam_coord = torch.cat([cam_coord, torch.ones((bs, 1, cam_coord.shape[2]))], 1)
+    camT_coord = torch.bmm(Tmat, cam_coord)
     
+    pixT_coord = torch.bmm(K, camT_coord[:, :3, :])
+    pixT_z = pixT_coord[:, 2, :].unsqueeze(1)
+    pixT_coord = pixT_coord[:, :2, :] / (pixT_z + eps)
     
+    mask = (pixT_coord[:, 0, :] < width) & (pixT_coord[:, 1, :] < height)
+    mask = mask.view(bs, 1, height, width)
     
-    return image, mask
+    pixT_coord = pixT_coord.view(bs, 2, height, width)
+    pixT_coord = pixT_coord.permute(0, 2, 3, 1)
+    
+    pixT_coord[:, :, :, 0] /= width - 1
+    pixT_coord[:, :, :, 1] /= height - 1
+    pixT_coord = (pixT_coord - 0.5) * 2
+    
+    imageT = F.grid_sample(target_image, pixT_coord, padding_mode='zeros', align_corners = True)
+    
+    return imageT, mask
 
 
 if __name__ == "__main__":
-    image = torch.randn((4, 3, 960, 540))       # Scale = (0.5, 0.5)
-    image = F.pad(image, (2, 2, 0, 0), "constant", 0)
-    depth = torch.randn((4, 1, 960, 540))       # Scale = (0.5, 0.5)
-    depth = F.pad(depth, (2, 2, 0, 0), "constant", 0)
-    target = torch.randn((4, 3, 960, 540))       # Scale = (0.5, 0.5)
-    target = F.pad(target, (2, 2, 0, 0), "constant", 0)
     
-    trans = torch.rand((4, 3))
-    rot = torch.rand((4, 3))
-    
+    trans = torch.rand((1, 3))
+    rot = torch.rand((1, 3))
     Tmat = trans_rot2Tmat(trans, rot)
+    
+    target = cv2.imread("../image/test_image.jpg")
+    target = torch.from_numpy(target)
+    target = target.permute(2, 0, 1)
+    target = target.unsqueeze(0)
+    target = target.float()
+    
+    # should use depth of source image but not target
+    depth = cv2.imread("../image/test_image_disp_raw.jpeg", cv2.IMREAD_GRAYSCALE)
+    depth = torch.from_numpy(depth)
+    depth = depth.unsqueeze(2)
+    depth = depth.permute(2, 0, 1)
+    depth = depth.unsqueeze(0)
+    depth = depth.float()
+    depth = 1 / depth
+    
+    source = cv2.imread("../image/test_image.jpg")
+    source = torch.from_numpy(source)
+    source = source.permute(2, 0, 1)
+    source = source.unsqueeze(0)
+    source = source.float()
+    
+    Tmat = torch.tensor([[[1.0, 0, 0, 0],
+                          [0, 1.0, 0, 0],
+                          [0, 0, 1.0, 0],
+                          [0, 0, 0, 1.0]]])
+    
     fx = 300
     fy = 300
-    cx = 481
-    cy = 270
+    cx = 319
+    cy = 117.5
     K = torch.Tensor([[fx, 0, cx],
-                      [fy, 0, cy],
+                      [0, fy, cy],
                       [0, 0, 1]])
     
-    res_image, mask = Warp(image, depth, Tmat, K)
-    target = target * mask
+    res_image, mask = Warp(target, depth, Tmat, K)
+    
+    cv2.imwrite("../image/test_image_res.jpg", res_image.squeeze(0).permute(1, 2, 0).cpu().numpy())
+    
+    source = torch.mul(source, mask)
     
     smothl1loss = nn.SmoothL1Loss()
-    loss = smothl1loss(res_image, target)
+    loss = smothl1loss(res_image, source)
     
     print(loss)
