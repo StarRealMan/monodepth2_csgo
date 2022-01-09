@@ -104,7 +104,7 @@ if __name__ == "__main__":
     depth = depth.permute(2, 0, 1)
     depth = depth.unsqueeze(0)
     depth = depth.float()
-    depth = 1 / depth
+    depth = 1 / (depth + 1e-7 * torch.ones_like(depth))
     
     source = cv2.imread("../image/test_image.jpg")
     source = torch.from_numpy(source)
