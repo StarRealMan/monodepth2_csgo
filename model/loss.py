@@ -84,6 +84,21 @@ def Warp(target_image, source_depth, Tmat, K):
     
     return imageT, mask
 
+class Loss(nn.Module):
+    def __init__(self, K):
+        super(Loss, self).__init__()
+        self.K = K
+
+    def forward(self, target, source, depth, trans, rot):
+        Tmat = trans_rot2Tmat(trans, rot)
+        res_image, mask = Warp(target, depth, Tmat, self.K)
+        source = torch.mul(source, mask)
+        
+        smothl1loss = nn.SmoothL1Loss()
+        loss = smothl1loss(res_image, source)
+
+        return loss
+
 
 if __name__ == "__main__":
     

@@ -38,17 +38,17 @@ class UpSampleBlock(nn.Module):
 
 
 class DepthNet(nn.Module):
-    def __init__(self, nc, ngf):
+    def __init__(self, nc, nf):
         super(DepthNet, self).__init__()
         self.depth = 4
 
         self.startconv = nn.Sequential(
-            nn.Conv2d(nc, ngf, 7, 1, 3, bias = False),
+            nn.Conv2d(nc, nf, 7, 1, 3, bias = False),
             nn.LeakyReLU(0.2),
         )
         
         self.DownSampleList = nn.ModuleList()
-        channel = ngf
+        channel = nf
         down_channel_list = []
         for depth_num in range(self.depth):
             downSample = DownSampleBlock(channel)
@@ -64,13 +64,13 @@ class DepthNet(nn.Module):
             self.UpSampleList.append(upsample)
         
         self.endconv = nn.Sequential(
-            nn.Conv2d(5 * ngf, 2 * ngf, 3, 1, 1, bias = False),
-            nn.BatchNorm2d(2 * ngf),
+            nn.Conv2d(5 * nf, 2 * nf, 3, 1, 1, bias = False),
+            nn.BatchNorm2d(2 * nf),
             nn.ReLU(),
-            nn.Conv2d(2 * ngf, ngf, 3, 1, 1, bias = False),
-            nn.BatchNorm2d(ngf),
+            nn.Conv2d(2 * nf, nf, 3, 1, 1, bias = False),
+            nn.BatchNorm2d(nf),
             nn.ReLU(),
-            nn.Conv2d(ngf, 1, 3, 1, 1, bias = False),
+            nn.Conv2d(nf, 1, 3, 1, 1, bias = False),
             nn.Tanh(),
         )
 
@@ -96,10 +96,10 @@ class DepthNet(nn.Module):
         return output
 
 class PoseNet(nn.Module):
-    def __init__(self, nc, ndf):
+    def __init__(self, nc, nf):
         super(PoseNet, self).__init__()
         depth = 2
-        self.ndf = ndf
+        self.nf = nf
 
         self.t_anchor_len = 12
         self.t_bin_size = 2 * torch.pi / self.t_anchor_len
@@ -110,11 +110,11 @@ class PoseNet(nn.Module):
         self.r_bin_size = torch.pi / self.r_anchor_len
 
         self.startconv = nn.Sequential(
-            nn.Conv2d(nc, ndf, 4, 2, 1, bias=False),
+            nn.Conv2d(nc, nf, 4, 2, 1, bias=False),
             nn.LeakyReLU(0.2),
         )
 
-        channel = ndf
+        channel = nf
         self.DownSampleList = nn.ModuleList()
         for depth_num in range(depth):
             downsample = DownSampleBlock(channel)
@@ -123,46 +123,46 @@ class PoseNet(nn.Module):
             self.DownSampleList.append(downsample)
 
         self.endconv = nn.Sequential(
-            nn.Conv2d(ndf * 4, ndf * 4, 3, 2, 1, bias=False),
-            nn.BatchNorm2d(ndf * 4),
+            nn.Conv2d(nf * 4, nf * 4, 3, 2, 1, bias=False),
+            nn.BatchNorm2d(nf * 4),
             nn.LeakyReLU(0.2),
-            nn.Conv2d(ndf * 4, ndf * 8, 3, 2, 1, bias=False),
-            nn.BatchNorm2d(ndf * 8),
+            nn.Conv2d(nf * 4, nf * 8, 3, 2, 1, bias=False),
+            nn.BatchNorm2d(nf * 8),
             nn.LeakyReLU(0.2),
         )
 
         self.fused_conv = nn.Sequential(
-            nn.Conv2d(ndf * 16, ndf * 16, 4, 2, 2, bias=False),
-            nn.BatchNorm2d(ndf * 16),
+            nn.Conv2d(nf * 16, nf * 16, 4, 2, 2, bias=False),
+            nn.BatchNorm2d(nf * 16),
             nn.LeakyReLU(0.2),
             nn.AvgPool2d(2, 2),
-            nn.Conv2d(ndf * 16, ndf * 16, 3, 2, 1, bias=False),
-            nn.BatchNorm2d(ndf * 16),
+            nn.Conv2d(nf * 16, nf * 16, 3, 2, 1, bias=False),
+            nn.BatchNorm2d(nf * 16),
             nn.LeakyReLU(0.2),
-            nn.Conv2d(ndf * 16, ndf * 16, 3, 2, 1, bias=False),
+            nn.Conv2d(nf * 16, nf * 16, 3, 2, 1, bias=False),
             nn.Sigmoid(),
         )
 
         self.translation_head = nn.Sequential(
-            nn.Linear(ndf * 32, ndf * 8),
+            nn.Linear(nf * 32, nf * 8),
             nn.ReLU(),
-            nn.Linear(ndf * 8, 3 + self.t_anchor_len * 3),
+            nn.Linear(nf * 8, 3 + self.t_anchor_len * 3),
             nn.ReLU(),
             nn.Tanh()
         )
         
         self.rotation_head = nn.Sequential(
-            nn.Linear(ndf * 32, ndf * 8),
+            nn.Linear(nf * 32, nf * 8),
             nn.ReLU(),
-            nn.Linear(ndf * 8, 3 + self.r_anchor_len * 3),
+            nn.Linear(nf * 8, 3 + self.r_anchor_len * 3),
             nn.ReLU(),
             nn.Tanh()
         )
 
         self.trans_amp_head = nn.Sequential(
-            nn.Linear(ndf * 32, ndf * 8),
+            nn.Linear(nf * 32, nf * 8),
             nn.ReLU(),
-            nn.Linear(ndf * 8, 1),
+            nn.Linear(nf * 8, 1),
             nn.ReLU(),
             nn.Tanh()
         )
@@ -201,6 +201,14 @@ class PoseNet(nn.Module):
         trans_amp = self.t_anchor_step + self.t_anchor_var * self.trans_amp_head(fused)
 
         return trans * trans_amp, rot
+
+def weight_init(m):
+    classname = m.__class__.__name__
+    if classname.find('Conv') != -1:
+        nn.init.normal_(m.weight.data, 0.0, 0.02)
+    elif classname.find('Instance') != -1:
+        nn.init.normal_(m.weight.data, 1.0, 0.02)
+        nn.init.constant_(m.bias.data, 0)
 
 if __name__ == "__main__":
     net = PoseNet(3, 32)
